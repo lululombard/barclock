@@ -1,0 +1,38 @@
+[Unit]
+Description=barclock, a 1920x480 touch bar dashboard for Home Assistant
+Documentation=file:///opt/barclock/README.md
+After=network-online.target systemd-udevd.service
+Wants=network-online.target
+# The panel belongs to barclock; never let a login prompt share it.
+Conflicts=getty@tty1.service
+
+[Service]
+Type=simple
+User=barclock
+Group=barclock
+SupplementaryGroups=video input render
+EnvironmentFile=/etc/barclock.env
+Environment=RUST_LOG=info
+Environment=BARCLOCK_CONFIG=/etc/barclock.toml
+ExecStart=/opt/barclock/barclock
+Restart=always
+RestartSec=2
+TimeoutStopSec=10
+# /var/lib/barclock: last brightness state
+StateDirectory=barclock
+StateDirectoryMode=0750
+OOMScoreAdjust=-500
+# Hardening (DRM + input are still reachable through the device groups above)
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/barclock
+DevicePolicy=closed
+DeviceAllow=/dev/dri rw
+DeviceAllow=char-drm rw
+DeviceAllow=char-input rw
+DeviceAllow=/dev/input rw
+
+[Install]
+WantedBy=multi-user.target

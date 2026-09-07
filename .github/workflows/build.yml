@@ -1,0 +1,47 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    # arm64 runner so the binary is built the same way the Pi runs it, no emulation.
+    # These runners are free on public repos.
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same dev packages as deploy/docker/Dockerfile, which mirrors what the Pi has.
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config \
+            libgbm-dev libxkbcommon-dev libudev-dev libinput-dev libseat-dev \
+            libgles-dev libegl-dev libdrm-dev libfontconfig-dev libfreetype-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Test
+        run: cargo test --release --locked
+
+      # Renders the UI headlessly, so a layout that fails to build is caught here too.
+      - name: Render a preview
+        run: cargo run --release --locked -- --config deploy/barclock.toml --preview preview.png
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: barclock-aarch64
+          path: |
+            target/release/barclock
+            preview.png
+          if-no-files-found: error

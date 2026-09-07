@@ -1,0 +1,4 @@
+Rajdhani (Indian Type Foundry) and Share Tech Mono (Carrois Apostrophe) are
+licensed under the SIL Open Font License 1.1 (https://openfontlicense.org).
+These TTF files were converted from woff2 copies so that Slint can embed them.
+The same pair is used by protosuit-engine (https://github.com/lululombard/protosuit-engine).

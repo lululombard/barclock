@@ -1,0 +1,751 @@
+// barclock, a 1920x480 dashboard. Same visual language as protosuit-engine
+// (https://github.com/lululombard/protosuit-engine): near-black ground with a
+// faint amber 20 px grid, Rajdhani for words, Share Tech Mono for every number, amber as the
+// primary accent, neon green for "pending / in progress", square 1 px #333 borders, hazard
+// stripes under section headings.
+
+import "fonts/Rajdhani-Regular.ttf";
+import "fonts/Rajdhani-SemiBold.ttf";
+import "fonts/ShareTechMono-Regular.ttf";
+
+export global Theme {
+    out property <color> bg: #0a0a0a;
+    out property <color> bg2: #141414;
+    out property <color> panel: #1a1a1a;
+    out property <color> well: #0d0d0d;
+    out property <color> amber: #f39c12;
+    out property <color> amber2: #e67e22;
+    out property <color> neon: #00ff88;
+    out property <color> tx: #e0e0e0;
+    out property <color> tx2: #888888;
+    out property <color> dim: #555555;
+    out property <color> line: #333333;
+    out property <color> danger: #ff3366;
+    out property <color> warn: #ffd93d;
+    out property <string> disp: "Rajdhani";
+    out property <string> mono: "Share Tech Mono";
+}
+
+export struct ToggleState { on: bool, pending: bool, available: bool }
+/// One appliance in the MAISON power strip: lit while it draws power, hidden when not configured.
+export struct LoadState { on: bool, available: bool, configured: bool, power: string, badge: string }
+export struct ZoneTime { label: string, time: string }
+
+/// Fired on every touch that lands on a control (resets the wake window).
+export global Activity {
+    callback touch();
+}
+
+/// Square, bordered touch target (>= 90x90 px). off = grey on well; on = amber; pending = neon.
+component Btn inherits Rectangle {
+    in property <string> label;
+    in property <bool> active;
+    in property <bool> pending;
+    in property <bool> enabled: true;
+    in property <color> accent: Theme.amber;
+    in property <length> font-size: 26px;
+    callback clicked;
+
+    min-width: 90px;
+    min-height: 90px;
+    background: !root.enabled ? Theme.bg
+        : ta.pressed ? root.accent.with-alpha(0.22)
+        : root.pending ? Theme.neon.with-alpha(0.09)
+        : root.active ? root.accent.with-alpha(0.12)
+        : Theme.well;
+    border-width: root.active || root.pending ? 2px : 1px;
+    border-color: !root.enabled ? #222222
+        : root.pending ? Theme.neon
+        : root.active ? root.accent
+        : Theme.line;
+
+    // A thin state bar along the bottom edge, readable from across the room.
+    Rectangle {
+        x: 6px;
+        y: parent.height - 9px;
+        width: parent.width - 12px;
+        height: 3px;
+        background: root.pending ? Theme.neon : root.active ? root.accent : #202020;
+        visible: root.enabled;
+    }
+    Text {
+        text: root.label;
+        width: parent.width - 8px;
+        height: parent.height - 14px;
+        y: 2px;
+        color: !root.enabled ? #3d3d3d : root.pending ? Theme.neon : root.active ? root.accent : Theme.tx2;
+        font-family: Theme.disp;
+        font-weight: 600;
+        font-size: root.font-size;
+        letter-spacing: 2px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        wrap: word-wrap;
+    }
+    ta := TouchArea {
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down) {
+                Activity.touch();
+            }
+        }
+        clicked => {
+            if (root.enabled) {
+                root.clicked();
+            }
+        }
+    }
+}
+
+/// "LUMIÈRES", uppercase, letter-spaced, hazard stripes underneath, optional live value right.
+/// Horizontal speed slider for the office fan: drag moves the knob live, the value is sent once
+/// on release. 0 % is the fan's floor, not off.
+component FanSlider inherits Rectangle {
+    in property <int> value;
+    in property <bool> enabled: true;
+    in property <bool> pending;
+    in property <bool> on;
+    callback changed(int);
+
+    property <int> drag-value;
+    property <bool> dragging;
+    property <int> shown: (root.dragging || root.pending) ? root.drag-value : root.value;
+    property <length> track-x: 196px;
+    property <length> track-w: root.width - root.track-x - 122px;
+    property <color> accent: !root.enabled ? #3d3d3d : root.pending ? Theme.neon : Theme.amber;
+
+    height: 80px;
+    background: Theme.well;
+    border-width: root.pending ? 2px : 1px;
+    border-color: !root.enabled ? #222222 : root.pending ? Theme.neon : Theme.line;
+
+    // mx is relative to the full-width TouchArea; positions outside the track clamp to 0 / 100
+    pure function pct-at(mx: length) -> int {
+        return max(0, min(100, round((mx - root.track-x) / root.track-w * 100)));
+    }
+
+    Image {
+        x: 14px;
+        y: (parent.height - 32px) / 2;
+        width: 32px;
+        height: 32px;
+        source: @image-url("icons/fan.svg");
+        colorize: !root.enabled ? #3d3d3d : root.on ? Theme.amber : Theme.tx2;
+        image-fit: contain;
+    }
+    Text {
+        x: 56px;
+        width: 136px;
+        height: parent.height;
+        text: "VENTILATEUR";
+        color: !root.enabled ? #3d3d3d : Theme.tx2;
+        font-family: Theme.disp;
+        font-weight: 600;
+        font-size: 20px;
+        letter-spacing: 2px;
+        vertical-alignment: center;
+    }
+    Rectangle { x: root.track-x; y: (parent.height - 6px) / 2; width: root.track-w; height: 6px; background: #202020; }
+    Rectangle { x: root.track-x; y: (parent.height - 6px) / 2; width: root.track-w * root.shown / 100; height: 6px; background: root.accent; }
+    Rectangle {
+        x: root.track-x + root.track-w * root.shown / 100 - 17px;
+        y: (parent.height - 34px) / 2;
+        width: 34px;
+        height: 34px;
+        background: ta.pressed ? root.accent.with-alpha(0.35) : Theme.well;
+        border-width: 2px;
+        border-color: root.accent;
+    }
+    Text {
+        x: parent.width - 112px;
+        width: 98px;
+        height: parent.height;
+        text: root.enabled ? root.shown + " %" : "—";
+        color: root.accent;
+        font-family: Theme.mono;
+        font-size: 30px;
+        horizontal-alignment: right;
+        vertical-alignment: center;
+    }
+    ta := TouchArea {
+        // the whole row grabs: label, track, value
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down) {
+                Activity.touch();
+                if (root.enabled) {
+                    root.dragging = true;
+                    root.drag-value = root.pct-at(self.mouse-x);
+                }
+            } else if (event.kind == PointerEventKind.up) {
+                if (root.dragging) {
+                    root.dragging = false;
+                    root.drag-value = root.pct-at(self.mouse-x);
+                    root.changed(root.drag-value);
+                }
+            } else if (event.kind == PointerEventKind.cancel) {
+                root.dragging = false;
+            }
+        }
+        moved => {
+            if (root.dragging) {
+                root.drag-value = root.pct-at(self.mouse-x);
+            }
+        }
+    }
+}
+
+/// One load in the MAISON strip: icon, name, watts. Amber while it draws power.
+component LoadCell inherits VerticalLayout {
+    in property <image> icon;
+    in property <string> name;
+    in property <LoadState> load;
+    horizontal-stretch: 1;
+    spacing: 2px;
+    alignment: start;
+    Image {
+        height: 34px;
+        source: root.icon;
+        colorize: root.load.on ? Theme.amber : root.load.available ? #3a3a3a : #222222;
+        image-fit: contain;
+        horizontal-alignment: center;
+    }
+    // name, plus an optional badge after it (the car's battery level)
+    HorizontalLayout {
+        alignment: center;
+        spacing: 5px;
+        Text {
+            text: root.name;
+            color: root.load.on ? Theme.amber : root.load.available ? Theme.tx2 : Theme.dim;
+            font-family: Theme.disp;
+            font-weight: 600;
+            font-size: 15px;
+            letter-spacing: 1px;
+            vertical-alignment: center;
+        }
+        if root.load.badge != "" : Text {
+            text: root.load.badge;
+            color: root.load.on ? Theme.amber : root.load.available ? Theme.tx2 : Theme.dim;
+            font-family: Theme.mono;
+            font-size: 15px;
+            vertical-alignment: center;
+        }
+    }
+    Text {
+        text: root.load.power;
+        color: root.load.on ? Theme.amber : root.load.available ? Theme.tx2 : Theme.dim;
+        font-family: Theme.mono;
+        font-size: 20px;
+        horizontal-alignment: center;
+    }
+}
+
+component SectionHeader inherits Rectangle {
+    in property <string> text;
+    in property <string> value;
+    in property <color> value-color: Theme.amber;
+    height: 28px;
+    Text {
+        x: 0;
+        y: 0;
+        text: root.text;
+        color: Theme.tx;
+        font-family: Theme.disp;
+        font-weight: 600;
+        font-size: 20px;
+        letter-spacing: 3px;
+    }
+    Text {
+        x: parent.width - self.width;
+        y: 2px;
+        text: root.value;
+        color: root.value-color;
+        font-family: Theme.mono;
+        font-size: 15px;
+        letter-spacing: 2px;
+    }
+    Image {
+        x: 0;
+        y: parent.height - 5px;
+        width: 96px;
+        height: 5px;
+        source: @image-url("icons/hazard.svg");
+        image-fit: fill;
+    }
+}
+
+/// Info module: a well with a 1 px line and a small mono caption in the corner.
+component Module inherits Rectangle {
+    in property <string> caption;
+    in property <string> caption-value;
+    in property <color> caption-value-color: Theme.amber;
+    background: Theme.well;
+    border-width: 1px;
+    border-color: Theme.line;
+    Text {
+        x: 12px;
+        y: 8px;
+        text: root.caption;
+        color: Theme.dim;
+        font-family: Theme.mono;
+        font-size: 14px;
+        letter-spacing: 2px;
+    }
+    Text {
+        x: parent.width - self.width - 12px;
+        y: 8px;
+        text: root.caption-value;
+        color: root.caption-value-color;
+        font-family: Theme.mono;
+        font-size: 14px;
+        letter-spacing: 2px;
+    }
+    @children
+}
+
+export component AppWindow inherits Window {
+    preferred-width: 1920px;
+    preferred-height: 480px;
+    background: Theme.bg;
+    default-font-family: Theme.disp;
+
+    // ---- connection state ----
+    in property <bool> connecting: true;
+    in property <string> connecting-detail: "";
+    in property <bool> ha-online: false;
+    in property <string> version-text: "";
+    // ---- screen brightness / wake ----
+    in property <float> dim-opacity: 0;
+    in property <bool> wake-guard: false;
+    in property <bool> touch-test: false;
+    // ---- clock ----
+    in property <string> time-hm: "--:--:";
+    in property <string> time-s: "--";
+    in property <string> date-text: "";
+    in property <string> weekday-text: "";
+    in property <[ZoneTime]> zones: [];
+    // ---- info ----
+    /// Indoor line under the weather: caption from [general] indoor_label, "21.9 °C   56 %".
+    in property <string> indoor-label: "BUREAU LULU";
+    in property <string> indoor-line: "—";
+    in property <string> weather-line: "";
+    in property <string> weather-condition: "";
+    in property <string> weather-icon: "";
+    in property <string> weather-place: "";
+    in property <string> house-power-text: "";
+    /// SERVEURS wattage in the MAISON power strip, always shown.
+    in property <string> servers-power-text: "— W";
+    in property <LoadState> load-stove;
+    in property <LoadState> load-car;
+    in property <LoadState> load-water-heater;
+    in property <LoadState> load-washer;
+    in property <LoadState> load-dryer;
+    /// VENTILATEUR slider (fan.set_percentage); 0 % is the floor, not off.
+    in property <int> fan-percentage: 0;
+    in property <bool> fan-available: false;
+    in property <bool> fan-pending: false;
+    in property <bool> fan-on: false;
+    in property <bool> printer-active: false;
+    in property <string> printer-status: "OFF";
+    in property <string> printer-mode: "off";   // off | idle | printing | paused | error
+    property <color> printer-color: root.printer-mode == "printing" ? Theme.neon
+        : root.printer-mode == "paused" ? Theme.amber
+        : root.printer-mode == "error" ? Theme.danger
+        : root.printer-mode == "idle" ? Theme.tx2 : Theme.dim;
+    in property <string> printer-progress-text: "";
+    in property <string> printer-time-left-text: "";
+    // ---- controls ----
+    in property <ToggleState> light-ceiling;
+    in property <ToggleState> light-monitor;
+    in property <ToggleState> kiosk-grafana;
+    in property <ToggleState> kiosk-cam-street;
+    in property <ToggleState> kiosk-cam-gallery;
+    in property <ToggleState> kiosk-display;
+    /// Actual select state, uppercased ("ON", "SUSPEND", ...), shown next to the KIOSK header.
+    in property <string> kiosk-display-mode: "";
+    in property <int> preset-pending: -1;
+    /// Preset matching the lights' current state (0..3), -1 = none.
+    in property <int> preset-active: -1;
+    in property <string> lights-summary: "";
+    // ---- toast ----
+    in property <string> toast-text: "";
+    in property <bool> toast-visible: false;
+
+    callback preset-clicked(int);
+    callback toggle-clicked(string);
+    callback fan-changed(int);
+    callback wake-touch();
+    /// --touch-test: a finger landed at (x, y) in logical pixels.
+    callback touch-test-point(float, float);
+
+    pure function weather-image(cond: string) -> image {
+        if (cond == "sunny") { return @image-url("icons/weather-sunny.svg"); }
+        if (cond == "clear-night") { return @image-url("icons/weather-clear-night.svg"); }
+        if (cond == "partlycloudy") { return @image-url("icons/weather-partlycloudy.svg"); }
+        if (cond == "rainy") { return @image-url("icons/weather-rainy.svg"); }
+        if (cond == "pouring") { return @image-url("icons/weather-pouring.svg"); }
+        if (cond == "snowy") { return @image-url("icons/weather-snowy.svg"); }
+        if (cond == "snowy-rainy") { return @image-url("icons/weather-snowy-rainy.svg"); }
+        if (cond == "fog") { return @image-url("icons/weather-fog.svg"); }
+        if (cond == "hail") { return @image-url("icons/weather-hail.svg"); }
+        if (cond == "lightning") { return @image-url("icons/weather-lightning.svg"); }
+        if (cond == "lightning-rainy") { return @image-url("icons/weather-lightning-rainy.svg"); }
+        if (cond == "windy") { return @image-url("icons/weather-windy.svg"); }
+        if (cond == "windy-variant") { return @image-url("icons/weather-windy-variant.svg"); }
+        if (cond == "exceptional") { return @image-url("icons/weather-exceptional.svg"); }
+        return @image-url("icons/weather-cloudy.svg");
+    }
+
+    // ---- the 20 px grid, at 3 % amber ----
+    for i in 96 : Rectangle { x: i * 20px; y: 0; width: 1px; height: root.height; background: Theme.amber; opacity: 0.03; }
+    for i in 24 : Rectangle { x: 0; y: i * 20px; width: root.width; height: 1px; background: Theme.amber; opacity: 0.03; }
+
+    // ---- zone dividers ----
+    Rectangle { x: 600px; y: 0; width: 1px; height: root.height; background: Theme.line; }
+    Rectangle { x: 1320px; y: 0; width: 1px; height: root.height; background: Theme.line; }
+
+    // ================= LEFT: touch controls (600 px) =================
+    VerticalLayout {
+        x: 0;
+        y: 0;
+        width: 600px;
+        height: root.height;
+        padding: 12px;
+        spacing: 8px;
+
+        SectionHeader { text: "LUMIÈRES"; value: root.lights-summary; }
+        HorizontalLayout {
+            height: 90px;
+            spacing: 6px;
+            Btn { label: "1 %"; active: root.preset-active == 0; pending: root.preset-pending == 0; clicked => { root.preset-clicked(0); } }
+            Btn { label: "50 %"; active: root.preset-active == 1; pending: root.preset-pending == 1; clicked => { root.preset-clicked(1); } }
+            Btn { label: "100 %"; active: root.preset-active == 2; pending: root.preset-pending == 2; clicked => { root.preset-clicked(2); } }
+            Btn { label: "OFF"; active: root.preset-active == 3; pending: root.preset-pending == 3; clicked => { root.preset-clicked(3); } }
+        }
+        HorizontalLayout {
+            height: 90px;
+            spacing: 6px;
+            Btn {
+                label: "PLAFONNIER";
+                active: root.light-ceiling.on;
+                pending: root.light-ceiling.pending;
+                enabled: root.light-ceiling.available;
+                clicked => { root.toggle-clicked("ceiling"); }
+            }
+            Btn {
+                label: "ÉCRAN";
+                active: root.light-monitor.on;
+                pending: root.light-monitor.pending;
+                enabled: root.light-monitor.available;
+                clicked => { root.toggle-clicked("monitor"); }
+            }
+        }
+        SectionHeader { text: "KIOSK"; value: root.kiosk-display-mode; value-color: root.kiosk-display-mode == "ON" ? Theme.amber : Theme.tx2; }
+        HorizontalLayout {
+            height: 90px;
+            spacing: 6px;
+            Btn {
+                label: "GRAFANA";
+                font-size: 22px;
+                active: root.kiosk-grafana.on;
+                pending: root.kiosk-grafana.pending;
+                enabled: root.kiosk-grafana.available;
+                clicked => { root.toggle-clicked("grafana"); }
+            }
+            Btn {
+                label: "CAMÉRA RUE";
+                font-size: 22px;
+                active: root.kiosk-cam-street.on;
+                pending: root.kiosk-cam-street.pending;
+                enabled: root.kiosk-cam-street.available;
+                clicked => { root.toggle-clicked("cam_street"); }
+            }
+            Btn {
+                label: "CAMÉRA GALERIE";
+                font-size: 22px;
+                active: root.kiosk-cam-gallery.on;
+                pending: root.kiosk-cam-gallery.pending;
+                enabled: root.kiosk-cam-gallery.available;
+                clicked => { root.toggle-clicked("cam_gallery"); }
+            }
+            Btn {
+                label: "MONITEUR";
+                font-size: 22px;
+                active: root.kiosk-display.on;
+                pending: root.kiosk-display.pending;
+                enabled: root.kiosk-display.available;
+                clicked => { root.toggle-clicked("display"); }
+            }
+        }
+        FanSlider {
+            value: root.fan-percentage;
+            enabled: root.fan-available;
+            pending: root.fan-pending;
+            on: root.fan-on;
+            changed(p) => { root.fan-changed(p); }
+        }
+    }
+
+    // ================= MIDDLE: clock (720 px) =================
+    VerticalLayout {
+        x: 601px;
+        y: 0;
+        width: 719px;
+        height: root.height;
+        alignment: center;
+        spacing: 0;
+        // HH:MM and SS are separate items so the software renderer only repaints the seconds.
+        HorizontalLayout {
+            alignment: center;
+            spacing: 0;
+            Text { text: root.time-hm; color: Theme.amber; font-family: Theme.mono; font-size: 136px; }
+            Text { text: root.time-s; color: Theme.amber; font-family: Theme.mono; font-size: 136px; }
+        }
+        Text {
+            text: root.date-text;
+            color: Theme.tx;
+            font-family: Theme.disp;
+            font-weight: 600;
+            font-size: 42px;
+            letter-spacing: 2px;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: root.weekday-text;
+            color: Theme.tx2;
+            font-family: Theme.disp;
+            font-size: 30px;
+            letter-spacing: 6px;
+            horizontal-alignment: center;
+        }
+        Rectangle { height: 10px; }
+        HorizontalLayout {
+            alignment: center;
+            spacing: 56px;
+            for z in root.zones : VerticalLayout {
+                spacing: 0;
+                alignment: center;
+                Text { text: z.label; color: Theme.dim; font-family: Theme.mono; font-size: 18px; letter-spacing: 3px; horizontal-alignment: center; }
+                Text { text: z.time; color: Theme.tx2; font-family: Theme.mono; font-size: 40px; horizontal-alignment: center; }
+            }
+        }
+    }
+    // status strip + version, top of the clock zone (keeps the bottom of the display clear)
+    HorizontalLayout {
+        x: 616px;
+        y: 8px;
+        width: 690px;
+        height: 18px;
+        spacing: 8px;
+        Rectangle { width: 8px; height: 8px; y: 5px; background: root.ha-online ? Theme.neon : Theme.danger; }
+        Text { text: root.ha-online ? "HOME ASSISTANT ONLINE" : "HOME ASSISTANT OFFLINE"; color: Theme.dim; font-family: Theme.mono; font-size: 12px; letter-spacing: 2px; vertical-alignment: center; }
+        Rectangle { horizontal-stretch: 1; }
+        Text { text: root.version-text; color: #3d3d3d; font-family: Theme.mono; font-size: 12px; letter-spacing: 2px; vertical-alignment: center; }
+    }
+
+    // ================= RIGHT: info from Home Assistant (600 px) =================
+    VerticalLayout {
+        x: 1321px;
+        y: 0;
+        width: 599px;
+        height: root.height;
+        padding: 12px;
+        spacing: 6px;
+        alignment: start;
+
+        Module {
+            caption: "MÉTÉO";
+            caption-value: root.weather-place;
+            caption-value-color: Theme.dim;
+            height: 116px;
+            Text {
+                x: 12px;
+                y: 30px;
+                width: parent.width - 24px;
+                text: root.weather-line;
+                color: Theme.tx;
+                font-family: Theme.mono;
+                font-size: 40px;
+            }
+            HorizontalLayout {
+                x: 12px;
+                y: 78px;
+                width: parent.width - 24px;
+                height: 30px;
+                spacing: 12px;
+                alignment: start;
+                Image { width: 34px; height: 34px; source: root.weather-image(root.weather-icon); colorize: Theme.amber; image-fit: contain; }
+                Text { text: root.weather-condition; color: Theme.tx2; font-family: Theme.disp; font-size: 26px; vertical-alignment: center; overflow: elide; }
+            }
+        }
+        Module {
+            caption: root.indoor-label;
+            caption-value: "";
+            height: 66px;
+            Text {
+                x: 12px;
+                y: 24px;
+                width: parent.width - 24px;
+                text: root.indoor-line;
+                color: Theme.tx;
+                font-family: Theme.mono;
+                font-size: 34px;
+            }
+        }
+        Module {
+            caption: "MAISON";
+            caption-value: "HYDRO-QUÉBEC";
+            caption-value-color: Theme.dim;
+            height: 172px;
+            // house total on the left, the servers' constant draw on the right, same line
+            HorizontalLayout {
+                x: 12px;
+                y: 24px;
+                width: parent.width - 24px;
+                height: 56px;
+                alignment: space-between;
+                Text { text: root.house-power-text; color: Theme.amber; font-family: Theme.mono; font-size: 54px; vertical-alignment: center; }
+                HorizontalLayout {
+                    spacing: 10px;
+                    alignment: end;
+                    Image { width: 30px; height: 30px; y: (parent.height - 30px) / 2; source: @image-url("icons/server.svg"); colorize: Theme.tx2; image-fit: contain; }
+                    Text { text: "SERVEURS"; color: Theme.tx2; font-family: Theme.disp; font-weight: 600; font-size: 20px; letter-spacing: 2px; vertical-alignment: center; }
+                    // Reserve the width of "9 999 W" (7 mono glyphs at 32px) and right-align in it,
+                    // so the icon and the SERVEURS label keep still when the value crosses 1000 W.
+                    Text {
+                        text: root.servers-power-text;
+                        color: Theme.amber;
+                        font-family: Theme.mono;
+                        font-size: 32px;
+                        min-width: 122px;
+                        horizontal-alignment: right;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+            // load columns: icon, name, watts; amber while drawing
+            HorizontalLayout {
+                x: 12px;
+                y: 84px;
+                width: parent.width - 24px;
+                height: 82px;
+                spacing: 6px;
+                if root.load-stove.configured : LoadCell { icon: @image-url("icons/range.svg"); name: "POÊLE"; load: root.load-stove; }
+                if root.load-car.configured : LoadCell { icon: @image-url("icons/car-charging.svg"); name: "AUTO"; load: root.load-car; }
+                if root.load-water-heater.configured : LoadCell { icon: @image-url("icons/water-heater.svg"); name: "CHAUFFE-EAU"; load: root.load-water-heater; }
+                if root.load-washer.configured : LoadCell { icon: @image-url("icons/washer.svg"); name: "LAVEUSE"; load: root.load-washer; }
+                if root.load-dryer.configured : LoadCell { icon: @image-url("icons/dryer.svg"); name: "SÉCHEUSE"; load: root.load-dryer; }
+            }
+        }
+        Module {
+            caption: "IMPRESSION 3D";
+            caption-value: root.printer-active ? root.printer-time-left-text : "";
+            caption-value-color: root.printer-color;
+            height: 76px;
+            HorizontalLayout {
+                x: 12px;
+                y: 26px;
+                width: parent.width - 24px;
+                height: 44px;
+                spacing: 16px;
+                alignment: start;
+                Image { width: 40px; height: 40px; source: @image-url("icons/printer.svg"); colorize: root.printer-mode == "off" ? #2a2a2a : root.printer-color; image-fit: contain; }
+                Text {
+                    text: root.printer-status;
+                    color: root.printer-color;
+                    font-family: Theme.disp;
+                    font-weight: 600;
+                    font-size: 32px;
+                    letter-spacing: 3px;
+                    vertical-alignment: center;
+                }
+                if root.printer-active : Text { text: root.printer-progress-text; color: root.printer-color; font-family: Theme.mono; font-size: 44px; vertical-alignment: center; }
+                if root.printer-active : Text { text: root.printer-time-left-text; color: Theme.tx2; font-family: Theme.mono; font-size: 32px; vertical-alignment: center; }
+            }
+        }
+    }
+
+    // ================= toast =================
+    toast := Rectangle {
+        visible: root.toast-visible;
+        x: (root.width - self.width) / 2;
+        y: root.height - 66px;
+        width: min(root.width - 40px, toast-text.preferred-width + 48px);
+        height: 52px;
+        background: Theme.well;
+        border-width: 2px;
+        border-color: Theme.danger;
+        toast-text := Text {
+            text: root.toast-text;
+            color: Theme.danger;
+            font-family: Theme.mono;
+            font-size: 22px;
+            letter-spacing: 1px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            width: parent.width;
+            height: parent.height;
+            overflow: elide;
+        }
+    }
+
+    // ================= "Connecting..." full-screen state, fades out =================
+    Rectangle {
+        background: Theme.bg;
+        opacity: root.connecting ? 1 : 0;
+        animate opacity { duration: 700ms; easing: ease-in-out; }
+        for i in 96 : Rectangle { x: i * 20px; y: 0; width: 1px; height: root.height; background: Theme.amber; opacity: 0.03; }
+        for i in 24 : Rectangle { x: 0; y: i * 20px; width: root.width; height: 1px; background: Theme.amber; opacity: 0.03; }
+        VerticalLayout {
+            alignment: center;
+            spacing: 12px;
+            Text { text: "BARCLOCK"; color: Theme.amber; font-family: Theme.disp; font-weight: 600; font-size: 28px; letter-spacing: 8px; horizontal-alignment: center; }
+            Text { text: "Connecting…"; color: Theme.tx; font-family: Theme.disp; font-weight: 600; font-size: 64px; letter-spacing: 4px; horizontal-alignment: center; }
+            Text { text: root.connecting-detail; color: Theme.dim; font-family: Theme.mono; font-size: 22px; letter-spacing: 2px; horizontal-alignment: center; }
+        }
+        // swallow touches while the overlay is up
+        if root.connecting : TouchArea { }
+    }
+
+    // ================= brightness overlay + wake guard =================
+    Rectangle { background: #000000; opacity: root.dim-opacity; }
+    if root.wake-guard : TouchArea {
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down) {
+                root.wake-touch();
+            }
+        }
+    }
+
+    // ================= touch calibration screen (--touch-test) =================
+    if root.touch-test : Rectangle {
+        background: #000000;
+        tt := TouchArea {
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.down) {
+                    root.touch-test-point(self.mouse-x / 1px, self.mouse-y / 1px);
+                }
+            }
+        }
+        for i in 48 : Rectangle { x: i * 40px; y: 0; width: 1px; height: parent.height; background: #1e1e1e; }
+        for i in 12 : Rectangle { x: 0; y: i * 40px; width: parent.width; height: 1px; background: #1e1e1e; }
+        Rectangle { x: tt.mouse-x - 1px; y: 0; width: 2px; height: parent.height; background: Theme.danger; visible: tt.pressed; }
+        Rectangle { x: 0; y: tt.mouse-y - 1px; width: parent.width; height: 2px; background: Theme.danger; visible: tt.pressed; }
+        Rectangle { x: tt.mouse-x - 30px; y: tt.mouse-y - 30px; width: 60px; height: 60px; border-width: 3px; border-color: Theme.neon; border-radius: 30px; visible: tt.pressed; }
+        Text { x: 12px; y: 8px; text: "◤ HAUT-GAUCHE (0,0)"; color: Theme.amber; font-family: Theme.mono; font-size: 26px; }
+        Text { x: parent.width - self.width - 12px; y: 8px; text: "HAUT-DROITE (1920,0) ◥"; color: Theme.amber; font-family: Theme.mono; font-size: 26px; }
+        Text { x: 12px; y: parent.height - self.height - 8px; text: "◣ BAS-GAUCHE (0,480)"; color: Theme.amber; font-family: Theme.mono; font-size: 26px; }
+        Text { x: parent.width - self.width - 12px; y: parent.height - self.height - 8px; text: "BAS-DROITE (1920,480) ◢"; color: Theme.amber; font-family: Theme.mono; font-size: 26px; }
+        Text {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            text: tt.pressed ? "x=" + round(tt.mouse-x / 1px) + "  y=" + round(tt.mouse-y / 1px) : "TOUCHEZ LES QUATRE COINS";
+            color: Theme.neon;
+            font-family: Theme.mono;
+            font-size: 56px;
+            letter-spacing: 4px;
+        }
+    }
+}

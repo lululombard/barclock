@@ -1,0 +1,151 @@
+# This is the barclock config, installed to /etc/barclock.toml.
+# Every value below is the built-in default, so you can delete anything you don't change.
+# Secrets stay out of here. HA_TOKEN, MQTT_USER and MQTT_PASSWORD go in /etc/barclock.env.
+
+[general]
+timezone = "America/Toronto"
+# "fr" or "en". Changes weekday names, weather labels and the printer status words.
+language = "fr"
+# Caption of the indoor temperature box under the weather.
+indoor_label = "Bureau Lulu"
+
+# These are the small clocks under the date, shown in this order.
+[clock]
+zones = [
+  { label = "UTC",          tz = "UTC" },
+  { label = "London",       tz = "Europe/London" },
+  { label = "Paris/Skopje", tz = "Europe/Paris" },
+  { label = "Dubai",        tz = "Asia/Dubai" },
+]
+
+[homeassistant]
+# HA_URL in /etc/barclock.env overrides this, which is handy if you'd rather keep
+# the address next to the token.
+url = "wss://<homeassistant_host>/api/websocket"
+# Seconds offline before the full-screen "Connecting" comes back. Short drops are
+# only logged, so a Wi-Fi blip doesn't blank the dashboard.
+connecting_after_s = 10
+# No answer to a service call after this and the button clears with an error toast.
+call_timeout_s = 8
+ping_interval_s = 30
+# Reconnect backoff. It only resets after a session that stayed up for 60 seconds,
+# so a connection that dies right after auth keeps climbing instead of hammering.
+backoff_min_s = 1
+backoff_max_s = 30
+
+# This is the MQTT broker, only used to publish the panel itself as a light.
+# Required only if you want to dim the screen or turn it off from Home Assistant.
+[mqtt]
+# Use the broker's LAN address. Port 1883 usually isn't reachable through a WAN
+# name, which is why this isn't derived from the Home Assistant URL.
+# MQTT_HOST and MQTT_PORT in the env file override it.
+host = "<broker_lan_ip>"
+port = 1883
+client_id = "barclock"
+# Clamped to 5..65535. rumqttc panics on 0 and truncates the CONNECT keepalive to a u16.
+keepalive_s = 30
+discovery_prefix = "homeassistant"
+base_topic = "barclock/display"
+unique_id = "barclock_display"
+device_name = "Bar display"
+suggested_area = "Bureau Lulu"
+
+[display]
+# Only used when SLINT_KMS_ROTATION isn't already set in the environment.
+# Use 270 if your picture comes out upside down.
+rotation = 90
+# Brightness when nothing was ever saved or retained on the broker.
+default_brightness = 255
+# A touch on a dark or dimmed screen keeps it readable this long, without
+# changing the Home Assistant entity.
+wake_seconds = 30
+wake_brightness = 160
+# Below this brightness a touch wakes the screen instead of operating a control,
+# so you don't turn a light off just by trying to see it.
+readable_threshold = 100
+# Cut the HDMI signal with DRM DPMS when the light is off. Set it to false to keep
+# a black frame instead. Please notice that the backlight stays lit either way,
+# see "What doesn't work" in the README.
+dpms_off = true
+# Black frame first, then the signal is cut about a second later. Nothing may be
+# drawn while the CRTC is off, so this delay is what keeps the event loop alive.
+dpms_delay_ms = 400
+# Brightness 1 still lets 6 % of the light through, very dim but readable up close.
+max_dim_opacity = 0.94
+state_file = "/var/lib/barclock/brightness"
+toast_seconds = 5
+
+# These are all my entities. This is the part you'll have to rewrite for your own house.
+# Setting any of them to "" hides the matching control or reading.
+[entities]
+weather = "weather.sept_iles"
+house_power = "sensor.hydroquebec_w"
+stove_power = "sensor.poele_w"
+printer_progress = "sensor.bureau_lulu_klipper_lulu_progress"
+printer_time_left = "sensor.bureau_lulu_klipper_lulu_print_time_left"
+# Printer power switch, off means OFF whatever the other sensors say.
+printer_power = "switch.bureau_lulu_klipper_lulu_ender3"
+# Moonraker's print state. Without it, a running print is guessed from progress
+# and time left, which gets it wrong on a finished file still loaded.
+printer_print_state = "sensor.bureau_lulu_klipper_lulu_current_print_state"
+# Klipper's own state. shutdown or error beats a stale print state.
+printer_klipper_state = "sensor.bureau_lulu_klipper_lulu_printer_state"
+light_ceiling = "light.plafonnier_bureau_lulu"
+light_monitor = "light.lumieres_ecran_lumiere_bureau"
+kiosk_grafana = "switch.bureau_lulu_kiosk_grafana_kiosk"
+# One select picks which camera the kiosk shows, so the two camera buttons are
+# mutually exclusive by construction. Pressing the lit one sends the off option.
+kiosk_camera = "select.bureau_lulu_kiosk_camera"
+kiosk_camera_street_option = "Rue"
+kiosk_camera_gallery_option = "Galerie"
+kiosk_camera_off_option = "off"
+# The kiosk monitor, driven as a plain on/off button.
+kiosk_display_power = "select.bureau_lulu_kiosk_display_power_mode"
+kiosk_display_off_option = "suspend"
+# These are the load columns under the house total, each one an icon, a name and
+# its watts. They light up above the matching threshold below. The range is
+# stove_power further up.
+car_charge_power = "sensor.chevrolet_volt_charge_power"
+# Shown next to AUTO with one decimal.
+car_battery = "sensor.chevrolet_volt_ev_battery_level"
+water_heater_power = "sensor.chauffe_eau_w"
+washer_power = "sensor.laveuse_power"
+dryer_power = "sensor.secheuse_w"
+# Always shown next to the house total, it's the technical room's constant draw.
+servers_power = "sensor.serveurs_w"
+# The VENTILATEUR slider. It sends fan.set_percentage on release only, never on
+# every pixel, and 0 % is this fan's floor rather than off.
+office_fan = "fan.office_fan_office_fan"
+# The indoor box under the weather.
+office_temperature = "sensor.thermometre_chambre_gabie_temperature"
+office_humidity = "sensor.thermometre_chambre_gabie_humidity"
+
+# This is where a load stops counting as idle and its column lights up.
+[thresholds]
+stove_flame_w = 4.0
+# The car sensor reports kW, not W.
+car_charging_kw = 0.1
+# The element draws around 3 kW, so anything above 50 W is really on.
+water_heater_w = 50.0
+# Both of these sit under 1 W in standby.
+washer_w = 10.0
+dryer_w = 10.0
+
+# This is to override the text shown for a Home Assistant weather condition.
+[weather_labels]
+# partlycloudy = "Nuages épars"
+
+# This is to read the house total and the servers straight from an IoTaWatt instead
+# of through Home Assistant, whose integration only refreshes every 30 seconds.
+# Leave url empty and both values come from the sensors above.
+[iotawatt]
+url = "http://<iotawatt_host>/"
+# A named OUTPUT on the device. Mine is defined there as @13+@14, the two mains legs.
+house_output = "HydroQuebec"
+# A named INPUT. barclock resolves it to a channel number through /config.txt.
+servers_input = "Serveurs"
+# One second, same as the device's own web page.
+poll_interval_ms = 1000
+timeout_ms = 2000
+# Consecutive failed polls before falling back to the Home Assistant sensors.
+failures_before_fallback = 3

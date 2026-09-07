@@ -1,0 +1,55 @@
+[package]
+name = "barclock"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.92"
+description = "1920x480 touch bar clock/dashboard for Home Assistant (Slint on DRM/KMS)"
+license = "MIT"
+
+[dependencies]
+# UI: Slint straight on DRM/KMS. Only the femtovg (GLES2) and software renderers, no skia.
+slint = { version = "1.17", default-features = false, features = ["compat-1-2", "std", "backend-linuxkms-noseat", "renderer-femtovg", "renderer-software"] }
+# Networking lives on one tokio current_thread runtime in a second thread.
+tokio = { version = "1", features = ["rt", "macros", "sync", "time", "net", "io-util", "signal"] }
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "handshake"] }
+# TLS by hand (rustls + ring) so that aws-lc-sys/cmake never enter the build.
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+webpki-roots = "1"
+rumqttc = { version = "0.25", default-features = false }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+chrono-tz = "0.10"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt", "std", "ansi"] }
+anyhow = "1"
+# Already in the tree through Slint's linuxkms backend; used to drive the connector's DPMS property.
+drm = "0.14"
+# adjtimex(): is the kernel clock NTP-synchronized?
+libc = "0.2"
+# `--preview out.png` screenshots (png is already compiled as part of Slint's image support).
+png = "0.18"
+
+[build-dependencies]
+slint-build = "1.17"
+
+[profile.release]
+opt-level = "s"
+lto = "thin"
+debug = false
+strip = true
+panic = "abort"
+incremental = false
+
+[profile.dev]
+opt-level = 1
+debug = 1
+
+# Slint's linuxkms dumb-buffer display triple-buffers, which forces a full-frame repaint every
+# present. The vendored copy is upstream 1.17.1 with display/swdisplay/dumbbuffer.rs switched to
+# double buffering (see the comment there) so the software renderer can repaint only dirty regions.
+[patch.crates-io]
+i-slint-backend-linuxkms = { path = "vendor/i-slint-backend-linuxkms" }

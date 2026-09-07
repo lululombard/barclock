@@ -1,0 +1,6 @@
+# Building on a Raspberry Pi Zero 2W (512 MB): one rustc at a time, gentle linker.
+[build]
+jobs = 1
+
+[target.aarch64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-Wl,--no-keep-memory", "-C", "link-arg=-Wl,--reduce-memory-overheads"]

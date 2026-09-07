@@ -1,0 +1,13 @@
+# Touch calibration for the wch.cn USB2IIC_CTP_CONTROL touchscreen (1a86:e5e3) of the 1920x480 bar.
+# The controller reports touches in the panel's NATIVE PORTRAIT frame (its X axis is the 480 px
+# short side, Y is the 1920 px long side), while barclock renders the picture rotated 90° into a
+# 1920x480 window and Slint maps touch X->window X, touch Y->window Y without rotating. Measured on
+# 2026-09-05 with `barclock --touch-test`: physical top-left landed at the screen's top-right,
+# top-right at bottom-right, bottom-right at bottom-left. This matrix (x' = y, y' = 1 - x in
+# libinput's normalized coordinates) puts every corner where the finger is.
+#   "0 1 0 -1 0 1"    touch rotated 90° CW relative to the picture  (this panel, SLINT_KMS_ROTATION=90)
+#   "0 -1 1 1 0 0"    the opposite rotation (use with SLINT_KMS_ROTATION=270 if the picture is upside down)
+#   "1 0 0 0 1 0"     identity
+#   "-1 0 1 0 1 0"    mirror X;   "1 0 0 0 -1 1"  mirror Y
+# After editing: sudo udevadm control --reload && sudo udevadm trigger --subsystem-match=input && sudo systemctl restart barclock
+ACTION=="add|change", SUBSYSTEM=="input", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="e5e3", ENV{LIBINPUT_CALIBRATION_MATRIX}="0 1 0 -1 0 1"
